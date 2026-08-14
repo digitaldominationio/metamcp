@@ -48,13 +48,19 @@ COPY . .
 # Build all packages and apps
 RUN pnpm build
 
-RUN sed -i -e "s/30000/600000/" \
-    "node_modules/.pnpm/next@15.5.12_react-dom@19.1.2_react@19.1.2__react@19.1.2/node_modules/next/dist/server/lib/router-utils/proxy-request.js" \
-    "node_modules/.pnpm/next@15.5.12_react-dom@19.1.2_react@19.1.2__react@19.1.2/node_modules/next/dist/esm/server/lib/router-utils/proxy-request.js"
+# The pnpm peer-dependency suffix varies by platform and lockfile resolution.
+# Locate Next.js by structure instead of pinning that generated directory name.
+RUN find node_modules/.pnpm -type f \
+    \( -path "*/next/dist/server/lib/router-utils/proxy-request.js" \
+       -o -path "*/next/dist/esm/server/lib/router-utils/proxy-request.js" \) \
+    -exec sed -i -e "s/30000/600000/g" {} +
 
 # Production runner stage
 FROM base AS runner
 WORKDIR /app
+
+# Keep pnpm non-interactive during production dependency pruning.
+ENV CI=true
 
 # OCI image labels
 LABEL org.opencontainers.image.source="https://github.com/metatool-ai/metamcp"
@@ -84,13 +90,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/backend/drizzle.config.ts ./
 COPY --from=builder --chown=nextjs:nodejs /app/packages ./packages
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./
+COPY --from=builder --chown=nextjs:nodejs /app/pnpm-lock.yaml ./
 COPY --from=builder --chown=nextjs:nodejs /app/pnpm-workspace.yaml ./
 
-# Install production dependencies only
-RUN pnpm install --prod
-
-# Install drizzle-kit locally in backend for migrations
-RUN cd apps/backend && pnpm add drizzle-kit@0.31.1
+# Install the locked workspace dependencies. drizzle-kit is required at runtime
+# by the entrypoint to apply migrations, so pruning all dev dependencies here
+# would remove a required executable.
+RUN pnpm install --frozen-lockfile
 
 # Copy startup script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
@@ -106,4 +112,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:12008/health || exit 1
 
 # Start both backend and frontend
-CMD ["./docker-entrypoint.sh"] 
+CMD ["./docker-entrypoint.sh"]

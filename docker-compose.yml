@@ -1,12 +1,15 @@
 services:
   app:
     container_name: metamcp
-    image: ghcr.io/metatool-ai/metamcp:latest
-    pull_policy: always
+    image: unifi-metamcp:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file:
       - .env
     ports:
-      - "12008:12008"
+      # Keep the origin private; Cloudflare Tunnel is the only public ingress.
+      - "127.0.0.1:12008:12008"
     environment:
       # Postgres connection details
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
@@ -161,7 +164,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: "no"
+    restart: unless-stopped
     volumes:
       # Persist the uv cache across container recreates. Without this, every
       # `docker compose up -d`/recreate wipes the writable layer and the next
@@ -173,18 +176,27 @@ services:
     networks:
       - metamcp-network
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: unifi-metamcp-tunnel
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
   postgres:
     image: postgres:16-alpine
     container_name: metamcp-pg
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
       POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
     ports:
-      - "${POSTGRES_EXTERNAL_PORT:-9433}:5432"
+      # Database access is local-only for maintenance and backups.
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-9433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

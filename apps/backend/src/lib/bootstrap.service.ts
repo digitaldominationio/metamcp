@@ -967,6 +967,36 @@ function validateConfig(config: EnvConfig): void {
   }
 }
 
+async function setRegistrationControls(
+  disableUiRegistration: boolean,
+  disableSsoRegistration: boolean,
+): Promise<void> {
+  console.log("🔧 Setting registration controls...");
+  try {
+    await upsertConfig(
+      ConfigKeyEnum.enum.DISABLE_SIGNUP,
+      disableUiRegistration.toString(),
+      "Whether new user signup is disabled",
+    );
+  } catch (err) {
+    console.warn("⚠️ Failed to set UI registration control:", err);
+  }
+
+  try {
+    await upsertConfig(
+      ConfigKeyEnum.enum.DISABLE_SSO_SIGNUP,
+      disableSsoRegistration.toString(),
+      "Whether new user signup via SSO/OAuth is disabled",
+    );
+  } catch (err) {
+    console.warn("⚠️ Failed to set SSO registration control:", err);
+  }
+
+  console.log(
+    `✓ Registration controls set: UI=${!disableUiRegistration}, SSO=${!disableSsoRegistration}`,
+  );
+}
+
 export async function initializeEnvironmentConfiguration(): Promise<void> {
   console.log("🚀 Initializing environment-based configuration...");
   const config = parseEnvConfig();
@@ -985,35 +1015,18 @@ export async function initializeEnvironmentConfiguration(): Promise<void> {
 
   validateConfig(config);
 
-  // Registration controls (applied every run)
-  console.log("🔧 Setting registration controls...");
-  try {
-    await upsertConfig(
-      ConfigKeyEnum.enum.DISABLE_SIGNUP,
-      config.disableUiRegistration.toString(),
-      "Whether new user signup is disabled",
-    );
-  } catch (err) {
-    console.warn("⚠️ Failed to set UI registration control:", err);
-  }
-
-  try {
-    await upsertConfig(
-      ConfigKeyEnum.enum.DISABLE_SSO_SIGNUP,
-      config.disableSsoRegistration.toString(),
-      "Whether new user signup via SSO/OAuth is disabled",
-    );
-  } catch (err) {
-    console.warn("⚠️ Failed to set SSO registration control:", err);
-  }
-
-  console.log(
-    `✓ Registration controls set: UI=${!config.disableUiRegistration}, SSO=${!config.disableSsoRegistration}`,
-  );
+  // Bootstrap users through Better Auth before the HTTP server starts. Keep
+  // registration temporarily enabled so a locked-down first deployment can
+  // create its configured administrators, then restore the desired policy.
+  await setRegistrationControls(false, false);
 
   // One-time bootstrap guard
   const skipBootstrap = await shouldSkipBootstrap(config);
   if (skipBootstrap) {
+    await setRegistrationControls(
+      config.disableUiRegistration,
+      config.disableSsoRegistration,
+    );
     console.log("✅ Environment-based configuration initialized (guarded)");
     return;
   }
@@ -1064,6 +1077,11 @@ export async function initializeEnvironmentConfiguration(): Promise<void> {
       await markBootstrapComplete();
     }
   }
+
+  await setRegistrationControls(
+    config.disableUiRegistration,
+    config.disableSsoRegistration,
+  );
 
   console.log("✅ Environment-based configuration initialized successfully");
 }
