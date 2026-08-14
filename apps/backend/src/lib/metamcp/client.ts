@@ -86,9 +86,10 @@ export const createMetaMcpClient = (
     const transformedUrl = transformDockerUrl(serverParams.url);
 
     // Build headers: start with custom headers, then add auth header
-    const headers: Record<string, string> = {
-      ...(serverParams.headers || {}),
-    };
+    const headers = resolveEnvVariables(serverParams.headers || {}) as Record<
+      string,
+      string
+    >;
 
     // Check for authentication - prioritize OAuth tokens, fallback to bearerToken
     const authToken =
@@ -116,9 +117,10 @@ export const createMetaMcpClient = (
     const transformedUrl = transformDockerUrl(serverParams.url);
 
     // Build headers: start with custom headers, then add auth header
-    const headers: Record<string, string> = {
-      ...(serverParams.headers || {}),
-    };
+    const headers = resolveEnvVariables(serverParams.headers || {}) as Record<
+      string,
+      string
+    >;
 
     // Check for authentication - prioritize OAuth tokens, fallback to bearerToken
     const authToken =
