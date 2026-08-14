@@ -164,6 +164,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      playwright:
+        condition: service_started
     restart: unless-stopped
     volumes:
       # Persist the uv cache across container recreates. Without this, every
@@ -173,6 +175,27 @@ services:
       # in error_status=ERROR. The image ships /home/nextjs/.cache/uv owned by
       # nextjs (uid 1001) so a fresh named volume inherits correct ownership.
       - uv_cache:/home/nextjs/.cache/uv
+    networks:
+      - metamcp-network
+
+  playwright:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    container_name: unifi-playwright-mcp
+    init: true
+    entrypoint: node
+    command:
+      - /app/cli.js
+      - --headless
+      - --browser
+      - chromium
+      - --no-sandbox
+      - --port
+      - "8931"
+      - --host
+      - 0.0.0.0
+      - --allowed-hosts
+      - playwright:8931
+    restart: unless-stopped
     networks:
       - metamcp-network
 
