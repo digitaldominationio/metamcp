@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+      - mcp-secrets.env
     ports:
       # Keep the origin private; Cloudflare Tunnel is the only public ingress.
       - "127.0.0.1:12008:12008"
