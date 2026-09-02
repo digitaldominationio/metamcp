@@ -1,0 +1,123 @@
+services:
+  app:
+    container_name: unifi-metamcp
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-metamcp_user}:${POSTGRES_PASSWORD:-m3t4mcp}@postgres:5432/${POSTGRES_DB:-metamcp_db}
+      APP_URL: ${APP_URL:-http://localhost:12008}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:12008}
+      EXTRA_TRUSTED_ORIGINS: ${EXTRA_TRUSTED_ORIGINS:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL: "true"
+      BOOTSTRAP_ENABLE: "true"
+      BOOTSTRAP_FAIL_HARD: "true"
+      BOOTSTRAP_DEBUG: "false"
+      BOOTSTRAP_USERS: ${BOOTSTRAP_USERS}
+      BOOTSTRAP_WARN_PASSWORD_CHANGE: "true"
+      BOOTSTRAP_RECREATE_USER: "false"
+      BOOTSTRAP_DELETE_OTHER_USERS: "false"
+      BOOTSTRAP_PRESERVE_API_KEYS: "true"
+      BOOTSTRAP_ONLY_FIRST_RUN: "false"
+      BOOTSTRAP_DISABLE_REGISTRATION_UI: "true"
+      BOOTSTRAP_DISABLE_REGISTRATION_SSO: "true"
+      BOOTSTRAP_API_KEYS: ${BOOTSTRAP_API_KEYS}
+      BOOTSTRAP_NAMESPACES: ${BOOTSTRAP_NAMESPACES}
+      BOOTSTRAP_ENDPOINTS: ${BOOTSTRAP_ENDPOINTS}
+      # mcp-secrets.env values (per-service MCP credentials)
+      DATAFORSEO_USERNAME: ${DATAFORSEO_USERNAME}
+      DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD}
+      COOLIFY_ACCESS_TOKEN: ${COOLIFY_ACCESS_TOKEN}
+      COOLIFY_BASE_URL: ${COOLIFY_BASE_URL}
+      N8N_API_KEY: ${N8N_API_KEY}
+      N8N_BASE_URL: ${N8N_BASE_URL}
+      GREENBUBBLE_TENANT_API_KEY: ${GREENBUBBLE_TENANT_API_KEY}
+      GREENBUBBLE_ADMIN_API_KEY: ${GREENBUBBLE_ADMIN_API_KEY}
+      OPENSEO_CF_ACCESS_CLIENT_ID: ${OPENSEO_CF_ACCESS_CLIENT_ID}
+      OPENSEO_CF_ACCESS_CLIENT_SECRET: ${OPENSEO_CF_ACCESS_CLIENT_SECRET}
+      OPENSEO_BASIC_AUTH: ${OPENSEO_BASIC_AUTH}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    expose:
+      - "12008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      playwright:
+        condition: service_started
+    restart: unless-stopped
+    volumes:
+      - uv_cache:/home/nextjs/.cache/uv
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12008/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    networks:
+      - metamcp-network
+
+  playwright:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    container_name: unifi-playwright-mcp
+    init: true
+    entrypoint: node
+    command:
+      - /app/cli.js
+      - --headless
+      - --browser
+      - chromium
+      - --no-sandbox
+      - --port
+      - "8931"
+      - --host
+      - 0.0.0.0
+      - --allowed-hosts
+      - playwright:8931
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: unifi-metamcp-tunnel
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: unifi-metamcp-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-m3t4mcp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metamcp_user} -d ${POSTGRES_DB:-metamcp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - metamcp-network
+
+volumes:
+  postgres_data:
+    driver: local
+  uv_cache:
+    driver: local
+
+networks:
+  metamcp-network:
+    driver: bridge
